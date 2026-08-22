@@ -21,3 +21,15 @@ resource "cloudflare_dns_record" "github_pages" {
   ttl     = 1 # auto, only meaningful when proxied = false
   proxied = false
 }
+
+# GitHub Pages also checks the www subdomain when the custom domain is set to
+# an apex, so it can offer the automatic apex <-> www redirect. Same DNS-only
+# requirement as above, for the same reason.
+resource "cloudflare_dns_record" "github_pages_www" {
+  zone_id = var.cloudflare_zone_id
+  name    = "www.grncunha.com"
+  type    = "CNAME"
+  content = "gilbertocunha.github.io"
+  ttl     = 1
+  proxied = false
+}

@@ -1,56 +1,64 @@
-name: Deploy webpage
+name: Deploy
 
 on:
+  pull_request:
+    paths:
+      - opentofu/project/**
+      - .github/workflows/deploy.yml
   push:
     branches: [main]
     paths:
-      - "docs/**"
-      - ".github/workflows/deploy.yml"
-  workflow_dispatch:
+      - opentofu/project/**
+      - .github/workflows/deploy.yml
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
+defaults:
+  run:
+    working-directory: opentofu/project
+
+env:
+  TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+  # S3 backend only ever reads these two exact names, regardless of how the
+  # secrets are named — see opentofu/project/backend.tofu.
+  AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
 
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: opentofu
 
 jobs:
-  build:
+  plan:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
+      - uses: actions/checkout@v7
 
-      - name: Setup Node
-        uses: actions/setup-node@v7
+      - uses: opentofu/setup-opentofu@v2
         with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: docs/package-lock.json
+          # Must stay >= 1.10 — backend.tofu relies on use_lockfile (native S3
+          # locking), which required_version in versions.tofu also enforces.
+          tofu_version: 1.12.6
 
-      - name: Install dependencies
-        working-directory: docs
-        run: npm ci
+      - name: tofu init
+        run: tofu init -input=false -no-color
 
-      - name: Build site
-        working-directory: docs
-        run: npm run build
+      - name: tofu plan
+        run: tofu plan -input=false -no-color
 
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v5
-        with:
-          path: docs/dist
-
-  deploy:
-    needs: build
+  apply:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    environment: production
+    needs: plan
     steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v5
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version: 1.12.6
+
+      - name: tofu init
+        run: tofu init -input=false -no-color
+
+      - name: tofu apply
+        run: tofu apply -input=false -no-color -auto-approve

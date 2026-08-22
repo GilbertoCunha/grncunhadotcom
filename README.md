@@ -4,16 +4,33 @@ Source for my personal website, built with [Astro Starlight](https://starlight.a
 
 It'll host a mixture of blog posts, project showcases, and possibly more shenanigans as it grows.
 
-## Documentation
+DNS for the site is managed as code in [`opentofu/`](opentofu).
 
-The site itself lives in [`docs/`](docs).
+## Project structure
 
-To run it locally:
-
-```bash
-cd docs
-npm install
-npm run dev
+```
+.
+├── public/
+├── src/
+│   ├── content/
+│   │   └── docs/
+│   │       └── index.mdx        # Home page
+│   └── content.config.ts
+├── astro.config.mjs
+└── package.json
 ```
 
-See [docs/README.md](docs/README.md) for more.
+Starlight looks for `.md` or `.mdx` files in `src/content/docs/`. Each file is exposed as a route based on its file name.
+
+## Commands
+
+| Command             | Action                                     |
+| :------------------ | :------------------------------------------ |
+| `npm install`        | Install dependencies                        |
+| `npm run dev`         | Start local dev server at `localhost:4321`  |
+| `npm run build`       | Build the production site to `./dist/`      |
+| `npm run preview`     | Preview the build locally before deploying  |
+
+## Deployment
+
+Pushes to `main` that touch the site source are built and published via [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml).

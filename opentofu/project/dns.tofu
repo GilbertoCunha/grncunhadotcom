@@ -6,13 +6,18 @@
 # the custom domain configured in the repo's Pages settings (Settings → Pages →
 # Custom domain), matched via the CNAME file committed at public/CNAME.
 #
-# proxied = true routes the domain through Cloudflare (CDN + automatic HTTPS)
-# instead of connecting straight to GitHub's edge.
+# proxied = false (DNS only) is required here: GitHub Pages' custom-domain
+# check does a live DNS lookup and expects to resolve straight through to
+# gilbertocunha.github.io. Proxying (orange cloud) puts Cloudflare's own IPs
+# in the response instead, which GitHub can't verify — it then reports the
+# domain as "improperly configured" even though the record itself is correct.
+# GitHub Pages provisions and terminates its own HTTPS cert for the domain,
+# so Cloudflare's proxy isn't needed for TLS here either.
 resource "cloudflare_dns_record" "github_pages" {
   zone_id = var.cloudflare_zone_id
   name    = "grncunha.com"
   type    = "CNAME"
   content = "gilbertocunha.github.io"
   ttl     = 1 # auto, only meaningful when proxied = false
-  proxied = true
+  proxied = false
 }

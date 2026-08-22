@@ -11,9 +11,9 @@ export default defineConfig({
 			title: 'grncunha.com',
 			social: [
 				{
-					icon: 'codeberg',
-					label: 'Codeberg',
-					href: 'https://codeberg.org/grncunha13',
+					icon: 'github',
+					label: 'GitHub',
+					href: 'https://github.com/GilbertoCunha',
 				},
 			],
 		}),

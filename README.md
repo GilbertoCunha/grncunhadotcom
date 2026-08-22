@@ -1,6 +1,6 @@
 # grncunha.com
 
-Source for my personal website, built with [Astro Starlight](https://starlight.astro.build) and hosted on [Codeberg](https://codeberg.org/grncunha13).
+Source for my personal website, built with [Astro Starlight](https://starlight.astro.build) and hosted on [GitHub Pages](https://github.com/GilbertoCunha/grncunhadotcom).
 
 It'll host a mixture of blog posts, project showcases, and possibly more shenanigans as it grows.
 

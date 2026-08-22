@@ -2,7 +2,7 @@
 
 Source for my personal website, built with [Astro Starlight](https://starlight.astro.build) and hosted on [Codeberg](https://codeberg.org/grncunha13).
 
-It'll host a mixture of blog posts, project showcases, and possibly more as it grows.
+It'll host a mixture of blog posts, project showcases, and possibly more shenanigans as it grows.
 
 ## Documentation
 

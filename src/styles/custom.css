@@ -1,0 +1,68 @@
+/*
+ * Overrides for Starlight's defaults. Starlight puts its own styles in the
+ * `starlight.core` cascade layer, and unlayered rules here always win over
+ * layered ones, so these selectors don't need extra specificity.
+ */
+
+/* "On this page": Starlight grows this column with the window, up to half of
+ * the leftover space. Fixed to a narrow width instead. */
+@media (min-width: 72rem) {
+	:root {
+		--toc-width: 14rem;
+	}
+
+	.right-sidebar-container {
+		width: var(--toc-width);
+	}
+
+	.right-sidebar-panel .sl-container {
+		width: calc(var(--toc-width) - 2 * var(--sl-sidebar-pad-x));
+		max-width: none;
+	}
+
+	/* Pages with and without the panel centre their content in the same space,
+	 * so the title doesn't jump sideways when moving between them */
+	[data-has-sidebar] .main-pane {
+		--sl-content-margin-inline: auto;
+		width: calc(100% - var(--toc-width));
+	}
+
+	[data-has-sidebar]:not([data-has-toc]) .main-pane {
+		margin-inline-end: var(--toc-width);
+	}
+}
+
+/* Previous / Next: plain small links instead of large boxes, so they don't
+ * compete with the page */
+.pagination-links a {
+	padding: 0.25rem 0;
+	border: none;
+	box-shadow: none;
+	font-size: var(--sl-text-xs);
+	color: var(--sl-color-gray-3);
+}
+
+.pagination-links a:hover .link-title {
+	color: var(--sl-color-text-accent);
+}
+
+.pagination-links .link-title {
+	font-size: var(--sl-text-sm);
+	color: var(--sl-color-white);
+}
+
+/* Left sidebar: a group inside a group (a blog series) gets a smaller label
+ * than its parent (Blog), so the tree reads top-down */
+.sidebar-content ul ul summary .large {
+	font-size: var(--sl-text-sm);
+}
+
+/* Header: Starlight places the search box differently on pages without the
+ * "On this page" panel. `initial` makes the variable unset, so the header
+ * falls back to the same layout as pages with the panel and the search box
+ * stays put. */
+@media (min-width: 50rem) {
+	:root[data-has-sidebar]:not([data-has-toc]) {
+		--__toc-width: initial;
+	}
+}

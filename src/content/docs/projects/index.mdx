@@ -1,0 +1,18 @@
+---
+title: Projects
+description: Things I've built, with links to the live versions and the write-ups behind them.
+tableOfContents: false
+sidebar:
+  label: Overview
+  order: 0
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+<CardGrid>
+	<LinkCard
+		title="URL Shortener"
+		description="A Go URL shortener on a self-hosted Kubernetes homelab, load tested to ~10k req/s."
+		href="/projects/url-shortener/"
+	/>
+</CardGrid>

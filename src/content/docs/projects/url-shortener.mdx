@@ -1,0 +1,44 @@
+---
+title: URL Shortener
+description: A Go URL shortener on a self-hosted Kubernetes homelab, load tested to ~10k req/s on one 6-core machine.
+sidebar:
+  order: 1
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+A URL shortener beyond the design: deployed on a Kubernetes homelab, and load tested to about 10k requests per second on a single 6-core machine.
+
+Current bottleneck is not the API, you can learn more in **The story** below.
+
+<CardGrid>
+	<LinkCard
+		title="Try it"
+		description="The live shortener."
+		href="https://url-shortener.grncunha.com"
+	/>
+	<LinkCard
+		title="Source code"
+		description="The API, load tests, dashboards and Kubernetes manifests."
+		href="https://github.com/GilbertoCunha/system-design/tree/main/url-shortener"
+	/>
+</CardGrid>
+
+## Stack
+
+- **API:** Go
+- **Storage:** Postgres, with Redis in front for reads
+- **Deployment:** self-hosted Kubernetes (Talos on Proxmox), one physical server
+- **Monitoring:** Prometheus metrics in VictoriaMetrics, Grafana dashboards
+- **Load testing:** k6
+
+## The story
+
+{/* The series is a draft, so its pages exist only in dev. Shown in dev only until it's published, so the live site has no broken link. */}
+{import.meta.env.DEV && (
+	<LinkCard
+		title="System Design: beyond the design"
+		description="A 3-part series on what it took to get this to ~10k req/s."
+		href="/blog/system-design-beyond-the-design/"
+	/>
+)}

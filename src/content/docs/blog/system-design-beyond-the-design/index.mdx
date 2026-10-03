@@ -1,0 +1,36 @@
+---
+title: 'System Design: beyond the design'
+description: A 3-part series on building a URL shortener and chasing 10k req/s on one homelab box.
+draft: true
+tableOfContents: false
+sidebar:
+  label: Overview
+  order: 0
+---
+
+import { CardGrid, LinkButton, LinkCard } from '@astrojs/starlight/components';
+
+A URL shortener that can handle ~10k requests per second on one 6-core homelab box running kubernetes.
+
+Even with that limited hardware, the bottleneck is not the API, but I want to keep the other services running in my homelab :)
+
+<LinkButton href="/projects/url-shortener/" icon="right-arrow">
+	See the project
+</LinkButton>
+
+## The series
+
+<CardGrid>
+	<LinkCard
+		title="Part 1: It works on my machine"
+		href="/blog/system-design-beyond-the-design/part-1-it-works-on-my-machine/"
+	/>
+	<LinkCard
+		title="Part 2: Inside the cluster"
+		href="/blog/system-design-beyond-the-design/part-2-inside-the-cluster/"
+	/>
+	<LinkCard
+		title="Part 3: Past the cluster"
+		href="/blog/system-design-beyond-the-design/part-3-past-the-cluster/"
+	/>
+</CardGrid>

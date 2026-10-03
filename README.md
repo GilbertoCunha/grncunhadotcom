@@ -24,8 +24,6 @@ DNS for the site is managed as code in [`opentofu/`](opentofu).
 
 Starlight looks for `.md` or `.mdx` files in `src/content/docs/`. Each file is exposed as a route based on its file name.
 
-Unfinished posts carry `draft: true` in their frontmatter: they show in `npm run dev` but are left out of the production build.
-
 ## Commands
 
 | Command             | Action                                     |

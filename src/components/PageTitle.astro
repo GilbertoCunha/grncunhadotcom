@@ -1,0 +1,37 @@
+---
+// Starlight's page title, plus an optional button beside it, set per page with
+// `titleLink` in the frontmatter (see src/content.config.ts)
+import Default from '@astrojs/starlight/components/PageTitle.astro';
+import { LinkButton } from '@astrojs/starlight/components';
+
+const { titleLink } = Astro.locals.starlightRoute.entry.data;
+---
+
+{
+	titleLink ? (
+		<div class="title-row">
+			<Default />
+			<LinkButton href={titleLink.href} icon="right-arrow">
+				{titleLink.text}
+			</LinkButton>
+		</div>
+	) : (
+		<Default />
+	)
+}
+
+<style>
+	.title-row {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem 1rem;
+	}
+
+	/* Align with the title, which has a top margin of its own */
+	.title-row > :global(a) {
+		margin-top: 1rem;
+	}
+
+</style>

@@ -23,12 +23,9 @@ import { CardGrid, LinkCard } from '@astrojs/starlight/components';
 		description="Things I've built, with links to the live versions."
 		href="/projects/"
 	/>
-	{/* The blog only has drafts so far, which exist only in dev. Drop the condition once the first post is published. */}
-	{import.meta.env.DEV && (
-		<LinkCard
-			title="Blog"
-			description="System Design: beyond the design, a 3-part series."
-			href="/blog/system-design-beyond-the-design/"
-		/>
-	)}
+	<LinkCard
+		title="Blog"
+		description="System Design: beyond the design, a 3-part series."
+		href="/blog/system-design-beyond-the-design/"
+	/>
 </CardGrid>

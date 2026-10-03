@@ -1,36 +1,73 @@
 ---
 title: 'System Design: beyond the design'
 description: A 3-part series on building a URL shortener and chasing 10k req/s on one homelab box.
-draft: true
 tableOfContents: false
+titleLink:
+  text: See the project
+  href: /projects/url-shortener/
 sidebar:
   label: Overview
   order: 0
 ---
 
-import { CardGrid, LinkButton, LinkCard } from '@astrojs/starlight/components';
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
 
-A URL shortener that can handle ~10k requests per second on one 6-core homelab box running kubernetes.
+This series of posts is about getting to 10k req/s on a 6-core i7-8700 running a Kubernetes homelab.
 
-Even with that limited hardware, the bottleneck is not the API, but I want to keep the other services running in my homelab :)
+You'd think that would be easy enough, right? So did I! Turns out it wasn't.
 
-<LinkButton href="/projects/url-shortener/" icon="right-arrow">
-	See the project
-</LinkButton>
+The homelab runs a lot of services, so it actually took a lot of monitoring and performance tuning to hit that target with all that's running inside of my modest box.
+
+At this point you might throw your hands up and say "Of course, you dummy. Why are you running Kubernetes to host such simple stuff?". Because *I like it* and want to keep *learning more* about it :\)
+
+Anyhow, many bottlenecks were hit along the way, *but it was almost never the code*. Instead, I got taken into a rabbit hole of performance tuning: reducing network hops, optimizing Gateway API configurations, investigating CPU steal and many more!
+
+As an example, my homelab used to be an 8 VM kubernetes cluster. Reducing that number to 3 cut p99 latency from 493ms down to 96ms.
+
+## What we'll cover
+
+- [Golang](https://go.dev) API for URL Shortening
+- [Postgres](https://www.postgresql.org) as a database and [Redis](https://redis.io) for caching
+- Deployed on self-hosted [Kubernetes](https://kubernetes.io/docs/home/) on one server
+- [Victoria Metrics](https://docs.victoriametrics.com) + [Grafana](https://grafana.com) to monitor for bottlenecks
+- [k6](https://grafana.com/docs/k6/latest/) for load testing
+
+Not just whiteboarding a system, but actually running and testing it under load!
+
+With that out of the way, let me invite you down the same rabbit hole I went through.
+
+## Foreword
+
+This section is mostly a personal note and opinions, feel free to skip to [*Part 1: It works on my machine!*](/blog/system-design-beyond-the-design/part-1-it-works-on-my-machine/) if you're just looking for the technical content.
+
+10k requests per second isn't very impressive by big-tech standards, I know. 
+
+But you know what? It's impressive to me! I have never developed a system in my professional career that needed such scale, and can probably count with one hand - and have fingers to spare - the number of people I personally know who have.
+
+I wanted to have this experience, so I did. It made me learn a lot and was the most fun I've had coding in a while.
+
+Many of the things I did for this project were new to me. I had very little exposure to Go (I am mostly a DevOps guy who also uses `python`), had never used `k6` and had never built Grafana dashboards, to name a few.
+
+And in today's world, many of these things could be done completely with AI, but then I wouldn't have learnt or had as much fun as I did. For this project, I decided to do everything that was hard and new to me first by hand until I understood it, and used AI afterwards to polish what was already there - and AI is a fantastic productivity boost.
+
+It was really refreshing to go back to reading docs, man pages and stack overflow. It was slow, but so is learning new things.
 
 ## The series
 
 <CardGrid>
 	<LinkCard
-		title="Part 1: It works on my machine"
+		title="Part 1: It works on my machine!"
+		description="From the whiteboard to 10k req/s on a laptop, and why the cluster couldn't keep up."
 		href="/blog/system-design-beyond-the-design/part-1-it-works-on-my-machine/"
 	/>
 	<LinkCard
-		title="Part 2: Inside the cluster"
+		title="Part 2: Why the hell is it so slow in my cluster?"
+		description="Making bottlenecks visible, then fixing them one saturated resource at a time."
 		href="/blog/system-design-beyond-the-design/part-2-inside-the-cluster/"
 	/>
 	<LinkCard
-		title="Part 3: Past the cluster"
+		title="Part 3: What lies beyond the cluster"
+		description="Fewer VMs for a 5x faster p99, then going public through Cloudflare."
 		href="/blog/system-design-beyond-the-design/part-3-past-the-cluster/"
 	/>
 </CardGrid>

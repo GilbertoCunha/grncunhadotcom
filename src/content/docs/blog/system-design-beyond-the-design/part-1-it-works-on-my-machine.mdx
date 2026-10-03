@@ -1,17 +1,29 @@
 ---
-title: 'Part 1: It works on my machine!'
-description: 'System Design: beyond the design, part 1 of 3.'
+title: 'Part 1: It works on my machine'
+description: 'System Design: beyond the design, part 1 of 2.'
 sidebar:
   order: 1
 ---
 
-*Part 1 of 3 of System Design: beyond the design. New here? Start with the [series intro](/blog/system-design-beyond-the-design/).*
+*Part 1 of 2 of System Design: beyond the design. New here? Start with the [series intro](/blog/system-design-beyond-the-design/).*
 
 ## The design, briefly
 
-:::note[Script]
-[§4 The design, briefly](https://claude.ai/artifact/UFCagN8ViTZT7ghpjJqg4U), in the writing script. Remove this note before publishing.
-:::
+I don't want to spend too much time on how to design a URL Shortener, since it is System Design 101 and has been covered to death.
+
+If it's new to you and you'd like to learn about design choices and trade-offs, you can read more about it in [ByteByteGo](https://bytebytego.com/courses/system-design-interview/design-a-url-shortener).
+
+Here are the most important decisions made for the system I'm showcasing:
+
+1. 100M urls a day equals around 1.2k writes and 11.6k reads per second. I aimed for a total of 10k rps with that same 10:1 ratio of reads to writes, as a real url shortener would see
+2. I use MD5 hashing. With 365B urls (100M a day for 10 years), collisions are still very unlikely, and if *a few* collisions happen, they'd have negligible difference in overall latency. Plus, when using hashing, I don't need to maintain a separate service such as ZooKeeper for centralized ID generation (such as when using approaches such as base62 encoding). As a consequence, my overall system ends up being simpler, with fewer moving parts.
+3. I'm not concerned with storing all urls for 10 years since I wouldn't have the storage capacity in my system (~28TB for my use case). I treat URLs as expiring after 24 hours (*which I have not yet implemented, to be completely honest*) which caps storage at around 8GB.
+4. I use temporary redirects (HTTP status code 302) instead of permanent redirects (HTTP status code 301) to allow me to capture click rate - *and haven't implemented it either*. I'm lazy, you know?
+5. Use a cache (Redis) in front of a database (Postgres) for reads
+
+Overall the design is quite vanilla, and looks like this:
+
+![design](/url-shortener/design.png)
 
 ## It works on my machine
 
@@ -19,9 +31,26 @@ sidebar:
 [§5 It works on my machine](https://claude.ai/artifact/UFCagN8ViTZT7ghpjJqg4U), in the writing script. Remove this note before publishing.
 :::
 
+## The homelab and its network
+
+:::note[Script]
+[§6 The homelab and its network](https://claude.ai/artifact/UFCagN8ViTZT7ghpjJqg4U), in the writing script. Remove this note before publishing.
+:::
+
+## Seeing inside
+
+:::note[Script]
+[§7 Seeing inside](https://claude.ai/artifact/UFCagN8ViTZT7ghpjJqg4U), in the writing script. Remove this note before publishing.
+:::
+
 ## Maybe it only works on my machine...
 
 :::note[Script]
-[§6 Maybe it only works on my machine...](https://claude.ai/artifact/UFCagN8ViTZT7ghpjJqg4U), in the writing script. Remove this note before publishing.
+[§8 Maybe it only works on my machine...](https://claude.ai/artifact/UFCagN8ViTZT7ghpjJqg4U), in the writing script. Remove this note before publishing.
 :::
 
+## Giving it room
+
+:::note[Script]
+[§9 Giving it room](https://claude.ai/artifact/UFCagN8ViTZT7ghpjJqg4U), in the writing script. Remove this note before publishing.
+:::

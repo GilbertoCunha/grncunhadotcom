@@ -23,12 +23,12 @@ At this point you might throw your hands up and say "Of course, you dummy. Why a
 Anyhow, many bottlenecks were hit along the way, *but it was almost never the code*. Instead, I got taken into a rabbit hole of performance tuning:
 
 1. Seeing my first deploy to the cluster crawl to a halt, collapsing to ~180 successful req/s due to CPU throttling
-2. Realizing how Bottlenecks can be misleading if you don't know where to look
-3. My `cloudflared` (more on that later) running out of ports
+2. Realizing how bottlenecks can be misleading if you don't know where to look
+3. My cloudflared (more on that later) running out of ports
 
 ## What we'll cover
 
-- [Golang](https://go.dev) API for URL Shortening
+- [Go](https://go.dev) API for URL Shortening
 - [Postgres](https://www.postgresql.org) as a database and [Redis](https://redis.io) for caching
 - Deployed on self-hosted [Kubernetes](https://kubernetes.io/docs/home/) on one server
 - [Victoria Metrics](https://docs.victoriametrics.com) + [Grafana](https://grafana.com) to monitor for bottlenecks
@@ -40,19 +40,19 @@ With that out of the way, let me invite you down the same rabbit hole I went thr
 
 ## Foreword
 
-This section is mostly a personal note and opinions, feel free to skip to [*Part 1: It works on my machine*](/blog/system-design-beyond-the-design/part-1-it-works-on-my-machine/) if you're just looking for the technical content.
+This section is mostly a personal note and opinions, feel free to skip to [Part 1: It works on my machine](/blog/system-design-beyond-the-design/part-1-it-works-on-my-machine/) if you're just looking for the technical content.
 
-18k requests per second isn't very impressive by big-tech standards, I know. 
+18k requests per second isn't very impressive by big-tech standards, I know.
 
 But you know what? It's impressive to me! I have never developed a system in my professional career that needed such scale, and can probably count with one hand - and have fingers to spare - the number of people I personally know who have.
 
 I wanted to have this experience, so I did. It made me learn a lot and was the most fun I've had coding in a while.
 
-Many of the things I did for this project were new to me. I had very little exposure to Go (I am mostly a DevOps guy who also uses `python`), had never used `k6` and had never built Grafana dashboards, to name a few.
+Many of the things I did for this project were new to me. I had very little exposure to Go (I am mostly a DevOps guy who also uses Python), had never used k6 and had never built Grafana dashboards, to name a few.
 
 In today's world, many of these things could be done completely with AI, but then I wouldn't have learnt or had as much fun as I did. For this project, I decided to do everything that was hard and new to me first by hand until I understood it, and used AI afterwards to polish what was already there - and AI is a fantastic productivity boost.
 
-It was really refreshing to go back to reading docs, man pages and stack overflow. It was slow, but so is learning new things.
+It was really refreshing to go back to reading docs, man pages and Stack Overflow. It was slow, but so is learning new things.
 
 ## The series
 

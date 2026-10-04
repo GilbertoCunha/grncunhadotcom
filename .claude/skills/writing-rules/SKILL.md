@@ -65,8 +65,9 @@ f=src/content/docs/path/to/post.mdx
 # Product names in code spans, or inconsistent spellings
 grep -n -E '`(k6|docker[- ]compose|redis|postgres|prometheus|cloudflared)`' "$f"
 grep -n -E '\b(docker compose|Docker compose|kubernetes|prometheus|proxmox|hetzner|cloudflare tunnels|victoria metrics)\b' "$f"
-# Italics around a product name
+# Italics around a product name or a link's text (a title is a name too)
 grep -n -E '\*(Victoria Metrics|Grafana|Prometheus|Redis|Postgres)\*' "$f"
+grep -n -E '\[\*[^]]*\*\]' "$f"
 # A full stop after an italic sentence ending in ? or !
 grep -n -E '[?!]\*\.' "$f"
 # Asides after a dash instead of in parentheses

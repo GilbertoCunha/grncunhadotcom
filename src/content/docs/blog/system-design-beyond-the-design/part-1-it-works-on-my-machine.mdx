@@ -182,7 +182,7 @@ And why did it collapse to 180 req/s instead of just staying at 4k? Once request
 
 Not an amazing insight from the dashboard, raising the CPU limit is probably the first thing I'd do, but hey! At least we're making data-driven decisions, right?
 
-So much for those requests and limits numbers I pulled out of my ass...
+Perhaps I should've pulled those requests and limits numbers out of somewhere else...
 
 Alright! Increase API CPU limits to 3 - including `GOMAXPROCS`. That section of my deployment looked like this:
 

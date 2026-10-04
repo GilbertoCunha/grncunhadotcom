@@ -1,11 +1,11 @@
 ---
 title: 'Part 1: It works on my machine'
-description: 'System Design: beyond the design, part 1 of 2.'
+description: 'System Design: beyond the design, part 1 of 3.'
 sidebar:
   order: 1
 ---
 
-*Part 1 of 2 of System Design: beyond the design. New here? Start with the [series intro](/blog/system-design-beyond-the-design/).*
+*Part 1 of 3 of System Design: beyond the design. New here? Start with the [series intro](/blog/system-design-beyond-the-design/).*
 
 ## The design, briefly
 
@@ -16,7 +16,7 @@ If it's new to you and you'd like to learn about design choices and trade-offs, 
 Here are the most important decisions made for the system I'm showcasing:
 
 1. 100M urls a day equals around 1.2k writes and 11.6k reads per second. I aimed for a total of 10k rps with that same 10:1 ratio of reads to writes, as a real url shortener would see
-2. I use MD5 hashing. With 365B urls (100M a day for 10 years), collisions are still very unlikely, and if *a few* collisions happen, they'd have negligible difference in overall latency. Plus, when using hashing, I don't need to maintain a separate service such as ZooKeeper for centralized ID generation (such as when using approaches such as base62 encoding). As a consequence, my overall system ends up being simpler, with fewer moving parts.
+2. I use MD5 hashing. With 365B urls (100M a day for 10 years), collisions are still very unlikely, and if *a few* collisions happen, they'd have negligible difference in overall latency. Plus, when using hashing, I don't need to maintain a separate service such as ZooKeeper for centralized ID generation (you'd need that for approaches such as base62 encoding when scaling your API horizontally). As a consequence, my overall system ends up being simpler, with fewer moving parts.
 3. I'm not concerned with storing all urls for 10 years since I wouldn't have the storage capacity in my system (~28TB for my use case). I treat URLs as expiring after 24 hours (*which I have not yet implemented, to be completely honest*) which caps storage at around 8GB.
 4. I use temporary redirects (HTTP status code 302) instead of permanent redirects (HTTP status code 301) to allow me to capture click rate - *and haven't implemented it either*. I'm lazy, you know?
 5. Use a cache (Redis) in front of a database (Postgres) for reads
@@ -27,30 +27,188 @@ Overall the design is quite vanilla, and looks like this:
 
 ## It works on my machine
 
-:::note[Script]
-[§5 It works on my machine](https://claude.ai/artifact/UFCagN8ViTZT7ghpjJqg4U), in the writing script. Remove this note before publishing.
-:::
+Local development was pretty uneventful. After writing the go code for the API, I decided to go with a `docker-compose` setup running the design above, and use `k6` for running load tests.
+
+You can find them on GitHub since the repo is public:
+
+1. [Docker compose](https://github.com/GilbertoCunha/system-design/blob/main/url-shortener/docker-compose.yaml)
+2. [k6 load tests](https://github.com/GilbertoCunha/system-design/tree/main/url-shortener/test/load)
+3. [Taskfile](https://github.com/GilbertoCunha/system-design/blob/main/url-shortener/Taskfile.yaml): I use it as a `Makefile` replacement so I can more easily run common commands from there
+
+I made no adjustements to connection pool settings, so my application used the defaults of the go libraries I decided to use for talking to redis and postgres: [go-redis](https://github.com/redis/go-redis) and [pgx](https://github.com/jackc/pgx).
+
+More interestingly, I am lazy and didn't specify resource limits for any container in the docker compose file.
+
+When running load tests with k6, this meant that my API, Postgres, Redis and k6 itself were sharing my laptop's resources and were free to use as much as they needed, as long as my laptop could keep up.
+
+k6 was configured such that it would ramp up requests for a while until it hit 10k rps, and then maintained that request throughput - I called this the `steady` phase of the load test.
+
+For reference, my laptop is a Macbook M4 Pro, with 12 cores and 24GB of unified memory.
+
+Off to the races I went, and ran a load test for 10k rps. The results were the following:
+
+- 10k clean rps
+- 0 errors
+- 1.23ms p99 during `steady` phase
+
+Look at me! This is pretty easy, right? Looks like I'll be able to clear this in no time at all! Hope you're ready for me, dear homelab!
+
+Or at least that's what I thought, but then an older, less efficient CPU, over-contended for many other resources came into the picture - my homelab.
+
+And so the rabbit hole started.
 
 ## The homelab and its network
 
-:::note[Script]
-[§6 The homelab and its network](https://claude.ai/artifact/UFCagN8ViTZT7ghpjJqg4U), in the writing script. Remove this note before publishing.
-:::
+To understand many of the limitations that came along, I need to explain what my homelab looks like.
 
-## Seeing inside
+Basically, I got a Hetzner server at an auction and configured it with:
 
-:::note[Script]
-[§7 Seeing inside](https://claude.ai/artifact/UFCagN8ViTZT7ghpjJqg4U), in the writing script. Remove this note before publishing.
-:::
+- [Headscale](https://headscale.net/stable/): self-hosted tailscale, so I could create my own private mesh network for things I didn't want to expose to the public internet (many of the services I run in my cluster)
+- [Proxmox](https://www.proxmox.com/en/): I use it mainly as a hypervisor so I can provision VMs inside of the server to use as Kubernetes Nodes
+- [Talos Linux](https://www.siderolabs.com/talos-linux): an OS made for Kubernetes, which I run inside each VM
+
+ATM I am rocking 3 VMs - one control plane node, one system node (for running all of my services) and one worker node (for running my applications). Yes, I have downtime when updating any of those nodes, but I can live with it on my modest box.
+
+To be transparent, I initially had way more VMs. Trimming it down to 3 was part of the optimizations I did for the URL shortener in order to reduce network hops between VMs - which reduced p99 latency from 493ms down to 96 ms.
+
+Regardless, I lost most of the metrics and dashboards I had during those benchmarks except some numbers I had written down (oops!), so I'll keep them out of this post.
+
+Ofc, I needed to take care of carving out IP ranges specifically for nodes, pods and services, also taking into account that kubernetes nodes needed to enter the mesh network, and configured IP forwarding on the host server to the Proxmox VMs. I won't go into too many details as to how, as the homelab might earn its own blog series, but I figured it was worth a mention in passing.
+
+Alright, so what exactly is the network path between a client and the kubernetes pods running in my homelab? Well, it depends on whether you're trying to access them while on the mesh network, or public internet. It looks more or less like this:
+
+![cluster-networking](/url-shortener/cluster-networking.png)
+
+*Yes, I purposely kept the host ip forwarding out of the picture to keep things simple*. Some additional context:
+
+1. The diagram above does not show it, but I am using [Cilium](https://cilium.io) as the Container Network Interface plugin for my cluster. This will be relevant later (wink, wink).
+2. I have two separate [Envoy](https://www.envoyproxy.io) Gateways (following Kubernetes [Gateway API](https://kubernetes.io/docs/concepts/services-networking/gateway/)) serving as an L7 proxy for my applications. These are separate for mesh and public traffic. I am using [kgateway](https://kgateway.dev) as the Gateway Controller.
+3. I wanted to experiment with cloudflare tunnels, so I created one and deployed [Cloudflared](https://github.com/cloudflare/cloudflared) on the cluster. This allows my applications to be reached from the public internet without my host needing any additional open ports to the outside world. It's pretty cool, but comes at a price (more on that later).
+
+This is a pretty standard setup for networking in kubernetes (with cloudflared being a little more niche), so I thought I wouldn't need to worry about it that much.
+
+*Spoiler alert*: it came to bite me in the ass, but we'll get there.
+
+Besides that I also have a bunch of other services running in the cluster that I'll just mention here in passing:
+
+- [Grafana](https://grafana.com): Dashboards for monitoring
+- [Victoria Metrics](https://docs.victoriametrics.com): Metrics collection, storage and querying - I wanted to try something other than Prometheus
+- [ArgoCD](https://argo-cd.readthedocs.io/en/stable/): for GitOps
+- [Cert Manager](https://cert-manager.io): automated provisioning of TLS certificates
+- [External DNS](https://kubernetes-sigs.github.io/external-dns/latest/): synchronize DNS records with Cloudflare (my DNS provider) for the services running in my cluster
+- [CloudNativePG](https://cloudnative-pg.io): running postgres on kubernetes
+
+And a few more, but you get the main idea: *I have a bunch of other stuff running in my modest box*.
 
 ## Maybe it only works on my machine...
 
-:::note[Script]
-[§8 Maybe it only works on my machine...](https://claude.ai/artifact/UFCagN8ViTZT7ghpjJqg4U), in the writing script. Remove this note before publishing.
-:::
+Alright, so we got to 10k rps first try locally, time to deploy!
+
+In my cluster, however, I am quite strict with pod resources and limits - which I had not set with docker compose locally. As such, I had to set some numbers for cpu and memory for my API, Postgres and Redis.
+
+So I did what any sensible person would do and pulled those numbers out of my ass.
+
+I decided, in my infinite wisdom, to set:
+
+- API at 500m CPU and 200Mi with no GOMAXPROCS or memory limit for Go
+- Postgres at 500m
+- Redis at 500m without maxmemory
+
+Deploy and...
+
+*What??? Maximum 4k requests per second? During the steady phase of the load test only 180 requests per second succeeded? What do you mean?*
+
+With that, my dreams were shattered. I did, however, make a smart decision that eventually culminated in me writing this post right now: instead of mindlessly tweaking and re-running tests until I eventually stumble into a good configuration, *let's measure first*.
+
+And so I began instrumenting my code.
+
+## Seeing inside
+
+At first I pretty much only used prometheus to instrument HTTP responses from my API. As I did more and more experiments, my instrumentation grew so I could better pinpoint errors.
+
+In later sections, I will explain what I wasn't measuring at the time, and how that misled me - which leads to a nice story of how metrics can deceive you as to what your system's bottlenecks are.
+
+From all of the metrics I gathered, I then built a nice looking dashboard which presented all the information I needed to properly identify problems with my system.
+
+Here's what I ended up with:
+
+- **Top level metrics**: p99 latency, req/s per status code, error rate burn, ...
+- **Host metrics**: resource usage, CPU pressure (share of time work waits for a CPU in each k8s node), CPU steal (share of time a proxmox VM wanted CPU, but proxmox gave it to another node)
+- **Gateway metrics**: in-flight requests, resource usage, latency as seen from the gateway, ...
+- **API metrics**: latency per route, errors by status code, average latency broken down (waiting for a connection, waiting for a response from db or cache, running actual API level code, ...), resource usage, ...
+- **Go metrics**: go scheduler wait time and share of CPU used for garbage collection
+- **Redis**: resource usage, pool usage, command latency, errors by type, cache hit ratio, ...
+- **Postgres**: resource usage, pool usage, query latency, errors by type, ...
+
+Here's an example of what the landing page for the dashboard looks like:
+
+![dashboard-landing-page](/url-shortener/d0-journey.png)
+
+It also contains annotated queries so I can see load test runs (the purple area in the background), new deployments, OOM Kills, etc... It's pretty neat, and it evolved quite a lot with the help of *Cláudio* (the Portuguese name I jokingly use for Claude) after I got bored with doing everything manually.
+
+Most of these metrics were already exposed by the services I already had running in kubernetes. There were two interesting tweaks I needed to do for Postgres and Redis, though:
+
+- `pgx`, the library I used to talk to Postgres in go, exports Pool metrics (connections in use, idle, ...) as **Gauges**. The problem with Gauges is that they are **point in time** metrics: they tell you what's happening *right now*, but nothing else. Since I had setup polling every 5 seconds from *Victoria Metrics*, this meant everything happened in between was lost. When there were spikes, I could even get the impression that the pool was doing fine when it was indeed choking in between the two scrapes.
+- `go-redis` has exactly the same problem
+
+The solution I came up with was simple: create my own custom pool usage metrics as **Histograms** instead, which also allows me to calculate connection acquire times. Implementing this solution for `pgx` or `go-redis` is slightly different, though:
+
+- `pgx` has an `.Acquire()` method that allows you to explicitly acquire a connection from the pool in your go code. This means that timing it is simply a matter of calculating the time this `.Acquire()` takes. Pretty easy.
+- `go-redis` has no such method. It acquires and releases connections from the pool on its own. So, I created my own [counting semaphore](https://github.com/GilbertoCunha/system-design/blob/main/url-shortener/internal/storage/redis/store.go) using a buffered go channel and timed how long it took to acquire a slot from the semaphore.
+
+With that out of the way and the code instrumented, I was ready to figure out more reliably what the first bottleneck was.
+
+From here on out, all results and conclusions you'll see were derived from this beautiful dashboard.
 
 ## Giving it room
 
-:::note[Script]
-[§9 Giving it room](https://claude.ai/artifact/UFCagN8ViTZT7ghpjJqg4U), in the writing script. Remove this note before publishing.
-:::
+Alright, let's figure out why my homelab can only handle 4k rps. Run load test again, check the dashboard, and...
+
+![d1-throttling](/url-shortener/d1-api.png)
+
+Well, that explains it... API get's CPU throttled, go scheduler needs to wait more and more until it can keep working, requests queue, everything goes to hell...
+
+Not an amazing insights from the dashboard, increasing that is probably the first thing I'd do, but hey! At least we're making data-driven decisions, right?
+
+So much for the numbers I pulled out of my ass...
+
+Alright! Increase API CPU limits to 3 - including `GOMAXPROCS`. That section of my deployment looked like this:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+...
+      - containers:
+        - name: api
+          env:
+            - name: GOMAXPROCS
+              valueFrom:
+                resourceFieldRef:
+                  containerName: api
+                  resource: limits.cpu
+                  divisor: "1"
+            - name: MEMORY_LIMIT_BYTES
+              valueFrom:
+                resourceFieldRef:
+                  containerName: api
+                  resource: limits.memory
+                  divisor: "1"
+            ...
+          resources:
+            requests:
+              cpu: 1
+              memory: 100Mi
+            limits:
+              cpu: 3
+              memory: 500Mi
+```
+
+Also increase Postgres CPU limits to 2, Redis to 1 just for good measure... (*I have not been the most careful using the scientific method of changing only a variable at a time to know what impact came from where, but alas*)
+
+Run again, and:
+
+![d1-journey](/url-shortener/d0-journey.png)
+
+Nice! Managed to hit 10k rps, no errors, 8ms p99 (70ms when seen from k6 due to latency from laptop to hetzner server). We finally did it!
+
+And then a sudden though came: *I wonder how much further I could go?*

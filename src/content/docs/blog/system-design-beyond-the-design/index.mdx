@@ -24,7 +24,7 @@ Anyhow, many bottlenecks were hit along the way, *but it was almost never the co
 
 1. Seeing my first deploy to the cluster crawl to a halt, collapsing to ~180 successful req/s due to CPU throttling
 2. Realizing how bottlenecks can be misleading if you don't know where to look
-3. My cloudflared (more on that later) running out of ports
+3. Cutting a proxy out of the request path to reach ~18k req/s
 
 ## What we'll cover
 
@@ -64,12 +64,12 @@ It was really refreshing to go back to reading docs, man pages and Stack Overflo
 	/>
 	<LinkCard
 		title="Part 2: How far can one box go?"
-		description="The box's real ceiling, a Redis that only looks slow, and going public through Cloudflare."
+		description="The box's real ceiling, and a Redis that only looks slow."
 		href="/blog/system-design-beyond-the-design/part-2-how-far-can-one-box-go/"
 	/>
 	<LinkCard
 		title="Part 3: Cutting out the middlemen"
-		description="Dropping the proxy in front of the API: ~18k req/s on the same box, and what TLS costs when the app does it."
+		description="~18k req/s on the same box."
 		href="/blog/system-design-beyond-the-design/part-3-cutting-out-the-middlemen/"
 	/>
 </CardGrid>

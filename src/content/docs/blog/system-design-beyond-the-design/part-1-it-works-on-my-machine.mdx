@@ -83,7 +83,7 @@ Alright, so what exactly is the network path between a client and the Kubernetes
 
 1. The diagram above does not show it, but I am using [Cilium](https://cilium.io) as the Container Network Interface plugin for my cluster. This will be relevant later (wink, wink).
 2. I have two separate [Envoy](https://www.envoyproxy.io) Gateways (following Kubernetes [Gateway API](https://kubernetes.io/docs/concepts/services-networking/gateway/)) serving as an L7 proxy for my applications. These are separate for mesh and public traffic. I am using [kgateway](https://kgateway.dev) as the Gateway Controller.
-3. I wanted to experiment with Cloudflare tunnels, so I created one and deployed [cloudflared](https://github.com/cloudflare/cloudflared) on the cluster. This allows my applications to be reached from the public internet without my host needing any additional open ports to the outside world. It's pretty cool, but comes at a price (more on that later).
+3. I wanted to experiment with Cloudflare tunnels, so I created one and deployed [cloudflared](https://github.com/cloudflare/cloudflared) on the cluster. This allows my applications to be reached from the public internet without my host needing any additional open ports to the outside world. It's pretty cool.
 
 This is a pretty standard setup for networking in Kubernetes (with cloudflared being a little more niche), so I thought I wouldn't need to worry about it that much.
 

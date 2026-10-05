@@ -7,20 +7,128 @@ sidebar:
 
 *Part 2 of 3 of System Design: beyond the design. New here? Start with the [series intro](/blog/system-design-beyond-the-design/).*
 
+In [Part 1](/blog/system-design-beyond-the-design/part-1-it-works-on-my-machine), we went through:
+
+1. Local development and load testing of the URL Shortener
+2. Deploying to the homelab and seeing the load tests fall flat
+3. Adding instrumentation and monitoring
+4. Identifying a resource bottleneck
+5. Hitting 10k rps on the homelab
+
+Now, we're going to see just how far we can go!
+
 ## The ceiling
 
-:::note[Script]
-[§10 The ceiling](https://claude.ai/artifact/UFCagN8ViTZT7ghpjJqg4U), in the writing script. Remove this note before publishing.
+Multiple optimizations actually happened after this point, but only a couple actually had a meaningful effect in performance.
+
+One of them was the reduction of the number of VMs in my cluster, which led to me having only 3 VMs in my current setup, as I previously mentioned. I won't go over it since I lost this benchmark's data.
+
+The other one is what we'll cover now.
+
+First, let's fire up a load test with a more ambitious target in mind. Set k6 to 16k rps, and go!
+
+![d7-journey](/url-shortener/d7-journey.png)
+
+Hmmm, we can see it hit the 16k rps, alright, but the API starts throwing many 503s, so we only managed to reach around 13k rps clean.
+
+Besides that, the "Average time per request, by hop" has an interesting breakdown of where time per request was spent, and we can clearly see two portions of the request path taking up more and more time as the number of rps grows:
+
+1. Redis
+2. Gateway (Envoy)
+
+Redis, however, seems to be the major contributor.
+
+Additionally, all of the errors are 503s, let's look at the API tab of the dashboard to figure out why they happened.
+
+![d7-api](/url-shortener/d7-api.png)
+
+Look at the bottom right, on "503s by cause". You'll see that all of them are due to `in_flight_limit`. This is because I added a counting semaphore for limiting the number of requests my API would keep in-flight. If that number is ever exceeded, the API starts throwing 503s, announcing that it is overloaded.
+
+That in-flight limit definitely needed some tuning since latency still spiked badly, but let's forget that for now.
+
+What we can deduce from all of this is that the Gateway and the Redis portion of the request path started taking longer and longer, which made requests queue up in the API, until finally they hit the in-flight limit of my counting semaphore, and then a storm of errors occurs.
+
+What we don't yet understand is *why* the Gateway and the Redis portion of the path started taking longer, so we need to dig deeper.
+
+Funnily enough, the first time I ran this benchmark, my dashboard was a lot more modest. I was not monitoring anything about the Gateway nor the Redis deployment in my cluster.
+
+All I knew was that Redis latency was spiking as perceived by the API. And I spent some time trying to fix that by tuning the connection pool size and CPU and memory resources.
+
+That was to no avail, because, as we are about to see, *I was looking in the wrong place*.
+
+Now that we actually have a good dashboard, let's look at Redis:
+
+![d7-redis](/url-shortener/d7-redis.png)
+
+:::note
+The bottom of this screenshot is a little cut off, apologies. I could replicate the settings of this benchmark and get a better one, but I won't. You only need the top part of the bottom panels anyway.
 :::
 
-## Going public
+No CPU or memory being too pressured, cache hit is at 100%, but some timeout errors, and wait...
 
-:::note[Script]
-[§11 Going public](https://claude.ai/artifact/UFCagN8ViTZT7ghpjJqg4U), in the writing script. Remove this note before publishing.
-:::
+Up to 400ms waiting for a connection? And Redis commands are running in, at tops, 6ms? But the API was reporting they took 5x that much... That's fishy...
 
-## Lessons
+Can you take a guess as to what's happening? I'll give you a hint, we saw latency spike someplace else, didn't we? That's right, let's look how the Gateway is doing:
 
-:::note[Script]
-[§12 Lessons](https://claude.ai/artifact/UFCagN8ViTZT7ghpjJqg4U), in the writing script. Remove this note before publishing.
-:::
+![d7-gateway](/url-shortener/d7-gateway.png)
+
+Damn... an L7 proxy ends up using upwards of 4 vCPU?
+
+I have to admit the first time I deployed it in my cluster I thought it would just be chilling there. That damn thing does not seem to be chilling, does it?
+
+So... among the Gateway, API, Redis, Postgres and all of the other shenanigans I am running on my cluster (and the host itself), just how many resources are being used, really?
+
+Let's take a quick look using our crystal ball again:
+
+![d7-host](/url-shortener/d7-host.png)
+
+Let me summarize what you are seeing: *Since I am a greedy bastard*, I gave 10 vCPU for my worker VM, and 4 vCPU for the other two VMs. Each vCPU is one thread on the host, so this totals to 14 threads max on the VMs. Well, the host only has 12, and the host itself needs to do some work too, not just my VMs. Are you following?
+
+What ends up happening? [CPU steal](https://www.site24x7.com/learn/linux/cpu-steal-time.html), and a lot of it! Basically, Proxmox is promising too much CPU to the VMs. Instead of receiving its CPU like they were promised (*not 3000 years ago*), VMs now wait for each other for Proxmox to give them CPU time.
+
+Which means that the worker VM, which is the Kubernetes node running our application and Gateway, is already CPU saturated.
+
+Let's put the nail in the coffin so we can summarize the problem fully. Let's look again at the API, but now at Go metrics:
+
+![d7-go](/url-shortener/d7-go.png)
+
+Look at the bottom left, "Scheduler wait". That represents the amount of time a goroutine needs to wait for a thread in order to resume work. Mind you, with all these requests coming into the API, our code is running a lot of these goroutines!
+
+Scheduler wait rises to almost 45ms! Beforehand, this was in the order of microseconds! This is a LOT of time spent waiting that is not spent handling requests.
+
+Aaaaand, remember that the API was reporting Redis latency spikes of around 60ms, but Redis itself was saying it only took 6ms? And that wait times to get a Redis connection were spiking?
+
+You guessed it, the goroutine that was running Redis commands was:
+
+1. Starting a timer to get instrumentation on Redis query time
+2. Acquiring a Redis connection
+3. Running a Redis command
+4. Measuring the total time to be scraped by Victoria Metrics and be displayed on the dashboard
+
+Since the goroutine can be interrupted at any of these steps, and wait times rise up to 40ms, then Redis connection waits rise (when the goroutine is stopped between steps 1 and 2) and the total time taken by Redis reported by the API rises too!
+
+It's one cheeky bottleneck, isn't it?
+
+Summarizing what happened:
+
+1. Requests rise quickly
+2. The host, Gateway, API, Postgres and Redis all increase their resource consumption to keep up
+3. The host runs out of CPU
+4. With the host overprovisioned on CPU, Proxmox starts to 'steal' CPU from VMs
+5. Gateway latency starts spiking because its CPU is being stolen
+6. Now starved of CPU, goroutine wait times skyrocket
+7. Redis connection acquisition times skyrocket
+8. Overall latency goes through the roof
+9. Requests queue up in the API
+10. In-flight limits are reached
+11. 503s everywhere, a sea of red on the dashboard
+12. *Make the bastard writing this post spend a shit-ton of time figuring out what's going on*
+
+So hurray! We:
+
+1. Managed to hit 13k clean rps
+2. Identified that the bottleneck is the amount of CPU on the host itself
+
+But what can I actually do about *that*? Can we... go further?
+
+Guess you'll have to stick around for the final round to find out!

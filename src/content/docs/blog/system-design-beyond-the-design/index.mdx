@@ -1,6 +1,6 @@
 ---
 title: 'System Design: beyond the design'
-description: A 3-part series on building a URL shortener and pushing it to ~32k req/s on one homelab box.
+description: A 3-part series on building a URL shortener and pushing it to ~30k req/s on one homelab box.
 tableOfContents: false
 titleLink:
   text: See the project
@@ -12,7 +12,7 @@ sidebar:
 
 import { CardGrid, LinkCard } from '@astrojs/starlight/components';
 
-This series of posts is about getting to 32k req/s on a 6-core i7-8700 running a Kubernetes homelab.
+This series of posts is about getting to 30k req/s on a 6-core i7-8700 running a Kubernetes homelab.
 
 You'd think that would be easy enough, right? So did I! Turns out it wasn't.
 
@@ -22,9 +22,9 @@ At this point you might throw your hands up and say "Of course, you dummy. Why a
 
 Anyhow, many bottlenecks were hit along the way, *but it was almost never the code*. Instead, I got taken into a rabbit hole of performance tuning:
 
-1. Seeing my first deploy to the cluster crawl to a halt, collapsing to ~180 successful req/s due to CPU throttling
+1. Seeing my first deploy to the cluster crawl to a halt, collapsing to ~180 successful req/s
 2. Realizing how bottlenecks can be misleading if you don't know where to look
-3. Cutting a proxy out of the request path to reach ~32k req/s
+3. Going against standard kubernetes deployment practices to reach ~30k req/s
 
 ## What we'll cover
 
@@ -42,13 +42,13 @@ With that out of the way, let me invite you down the same rabbit hole I went thr
 
 This section is mostly a personal note and opinions, feel free to skip to [Part 1: It works on my machine](/blog/system-design-beyond-the-design/part-1-it-works-on-my-machine/) if you're just looking for the technical content.
 
-32k requests per second isn't very impressive by big-tech standards, I know.
+30k requests per second isn't very impressive by big-tech standards, I know.
 
 But you know what? It's impressive to me! I have never developed a system in my professional career that needed such scale, and can probably count with one hand - and have fingers to spare - the number of people I personally know who have.
 
 I wanted to have this experience, so I did. It made me learn a lot and was the most fun I've had coding in a while.
 
-Many of the things I did for this project were new to me. I had very little exposure to Go (I am mostly a DevOps guy who also uses Python), had never used k6 and had never built Grafana dashboards, to name a few.
+Many of the things I did for this project were new to me. I had very little exposure to Go (I am mostly a DevOps guy who also uses Python - *and yes, I dislike categorizing DevOps as a role*), had never used k6 and had never built Grafana dashboards, to name a few.
 
 In today's world, many of these things could be done completely with AI, but then I wouldn't have learnt or had as much fun as I did. For this project, I decided to do everything that was hard and new to me first by hand until I understood it, and used AI afterwards to polish what was already there - and AI is a fantastic productivity boost.
 
@@ -69,7 +69,7 @@ It was really refreshing to go back to reading docs, man pages and Stack Overflo
 	/>
 	<LinkCard
 		title="Part 3: Cutting out the middlemen"
-		description="~32k req/s on the same box."
+		description="~30k req/s on the same box."
 		href="/blog/system-design-beyond-the-design/part-3-cutting-out-the-middlemen/"
 	/>
 </CardGrid>

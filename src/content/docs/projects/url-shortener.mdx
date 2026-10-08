@@ -1,13 +1,13 @@
 ---
 title: URL Shortener
-description: A Go URL shortener on a self-hosted Kubernetes homelab, load tested to ~32k req/s on one 6-core machine.
+description: A Go URL shortener on a self-hosted Kubernetes homelab, load tested to ~30k req/s on one 6-core machine.
 sidebar:
   order: 1
 ---
 
 import { CardGrid, LinkCard } from '@astrojs/starlight/components';
 
-A URL shortener beyond the design: deployed on a Kubernetes homelab, and load tested to about 32k requests per second on a single 6-core machine.
+A URL shortener beyond the design: deployed on a Kubernetes homelab, and load tested to about 30k requests per second on a single 6-core machine.
 
 Current bottleneck is not the API, you can learn more in **The story** below.
 
@@ -36,6 +36,6 @@ Current bottleneck is not the API, you can learn more in **The story** below.
 
 <LinkCard
 	title="System Design: beyond the design"
-	description="A 3-part series on what it took to get this to ~32k req/s."
+	description="A 3-part series on what it took to get this to ~30k req/s."
 	href="/blog/system-design-beyond-the-design/"
 />

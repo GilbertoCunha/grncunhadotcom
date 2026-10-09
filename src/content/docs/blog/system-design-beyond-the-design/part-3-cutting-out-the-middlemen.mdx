@@ -1,97 +1,94 @@
 ---
 title: 'Part 3: Cutting out the middlemen'
-description: 'System Design: beyond the design, part 3 of 3.'
+description: 'Taking Envoy out of the request path frees 4 vCPU and gets the same homelab box from 13k to ~30k clean req/s.'
 sidebar:
   order: 3
 ---
 
-*Part 3 of 3 of System Design: beyond the design. New here? Start with the [series intro](/blog/system-design-beyond-the-design/).*
+*Part 3 of 3 of A URL shortener at 30k req/s on a 6-core homelab. New here? Start with the [series intro](/blog/system-design-beyond-the-design/).*
 
-In [Part 2](/blog/system-design-beyond-the-design/part-2-how-far-can-one-box-go), we managed to hit 13k rps on my modest homelab.
+In [Part 2](/blog/system-design-beyond-the-design/part-2-how-far-can-one-box-go), Envoy was using 4 of the host's 12 threads just to route requests to one app, and the host had run out of CPU.
 
-Furthermore, through the amazing practices of instrumentation and dashboarding, we managed to figure out the current bottleneck: the CPU of the host that powers my homelab, as well as the CPU limits of the API itself.
-
-In this third and final act of this series, we will be exploring one nice trick I found to greatly reduce resource usage on my host machine, allowing us to give our application and host more breathing room, and hit our final target: 30k rps.
-
-**One weird trick**: yes indeed, the late 2000s were right. This one trick opened the door to more than double our rps! Let's dig in!
+Taking Envoy out of the request path freed those 4 vCPU and, with a few more changes, got the same box from 13k to ~30k clean req/s.
 
 ## Does the mesh need a proxy?
 
-Recalling [Part 2](/blog/system-design-beyond-the-design/part-2-how-far-can-one-box-go), one of the main applications consuming CPU from the host was Envoy, which ended up consuming upwards of 4 vCPUs, a third of the host's 12 threads! Ouch!
+The natural question was: *why do I need it?* Sure, most Kubernetes setups use Gateway API, but *why*?
 
-The natural question I asked was: *but why do I need it?* Sure, most Kubernetes setups use Gateway API, but *why*?
+In the homelab, Envoy is the implementation of Kubernetes' Gateway API: an L7 proxy that routes requests based on HTTP semantics, and handles TLS and circuit breaking. Envoy can do a whole lot more than that, but those are the features I use.
 
-Well, Envoy is the L7 proxy I use in the homelab as the implementation of Kubernetes' Gateway API: an intelligent proxy that routes requests based on HTTP semantics, and provides TLS and circuit breaker settings.
+So do I need them?
 
-Now, don't get me wrong, Envoy can do a whole lot more than just that, but we're not making use of all its functionalities.
+For encryption, the mesh already has it covered: Headscale coordinates the mesh, and Tailscale on each device (the homelab host included) encrypts traffic between them with WireGuard. Past the host, from the VMs into the pods, traffic travels unencrypted, but it never leaves the physical machine.
 
-So... can we replace them?
+Circuit breakers are nice to have, but not strictly necessary: the API already protects itself with its in-flight limit, answering 503 when it's overloaded.
 
-Well, for request encryption, my mesh already has it covered: Headscale coordinates the mesh, and Tailscale on each device (the homelab host included) encrypts traffic between them with WireGuard. So yes! Encryption is taken care of between the client and the server. Past that point, from the host to the VMs and into the pods, traffic travels unencrypted, but it never leaves the physical machine.
+What remains is request routing. Does this application *need* L7 routing? Turns out: no, it does not.
 
-Circuit breakers are a nice to have, but not strictly necessary: the API already protects itself with its in-flight limit, answering 503 when it's overloaded. So we can just ignore them and keep things simple.
-
-What remains is request routing. Does this application *need* L7 level routing? Turns out: no, it does not.
-
-The way routing works with Gateway API in the cluster is the following:
+Here's how routing works with Gateway API in the cluster:
 
 1. I define a domain with a wildcard certificate, in my case `*.dev.k8s.homelab.grncunha.com`
 2. The mesh Gateway accepts any subdomain, and each app adds a route for its own name, such as `url-shortener.dev.k8s.homelab.grncunha.com`
-3. External DNS creates a DNS record mapping that subdomain to the IP of the Cilium load balancer in front of the Gateway (yes, there's already an L4 load balancer in the path!)
+3. External DNS creates a DNS record mapping that subdomain to the IP of the Cilium load balancer in front of the Gateway (*yes, there's already an L4 load balancer in the path!*)
 
 ![mesh-with-gateway](/url-shortener/mesh-with-gateway.png)
 
 So... why not **cut out the middleman**?
 
-Let's just have the DNS record map the subdomain to the IP of an L4 load balancer created specifically for this application, which routes traffic to my application's pods, and let WireGuard take care of encryption on the way to the server!
-
-Here's what that looks like:
+Instead, the DNS record can point to an L4 load balancer created just for this application, which sends traffic straight to its pods, and WireGuard still encrypts it on the way to the server:
 
 ![mesh-without-gateway](/url-shortener/mesh-without-gateway.png)
 
-And indeed, this removes Envoy from the request path! Let's try it out!
+That takes Envoy out of the request path.
 
-## How far without Envoy
+## What dropping Envoy costs
 
-I know I said I'd just remove Envoy and that *this one trick* would make us hit the target of 30k rps. That was... *inaccurate* (*Haven't you done anything worse than some mild, harmless clickbait? Who are you to judge?*).
+This isn't free, and I wouldn't do it for every app:
 
-First, let's use the additional CPU from removing Envoy and give it to the API, since it was also reaching its CPU limit last time. It will change from 3 to 5 vCPUs. While at it, I also raised the Redis connection pool from 50 to 150, and the API's in-flight limit from 1,200 to 2,000: at these rates, bursts were filling both.
+- **No L7 features at the edge**: no retries, timeouts, header-based routing or circuit breaking. The API's in-flight limit is the only overload protection left.
+- **Less visibility**: Envoy's access logs and per-route metrics are gone, so the API's own instrumentation is all I have.
+- **One load balancer IP per app**: behind the Gateway, every app shared one IP and one wildcard certificate. Now every app that skips the Gateway takes its own IP from Cilium's pool.
+- **Mesh traffic only**: this works because WireGuard already encrypts mesh traffic. Public traffic through cloudflared still goes through the public Gateway.
 
-Secondly, it turns out that a new bottleneck emerges somewhere between 16k and 18k rps... My home internet's upload speed, which is only around 50 Mbps.
+The alternatives all keep the cost:
 
-So, I spun up a server in Hetzner Cloud, connected it to my mesh network, ran the load test, and sent it to the shadow realm now that it served its purpose.
+- Raising Envoy's concurrency gives it more of the CPU the host doesn't have.
+- Moving it to the system node moves the CPU cost instead of removing it, and that node only has 2 vCPU.
+- Cilium's own Gateway API implementation also runs Envoy under the hood.
 
-And with all that, you can now join me in appreciating the full might of all the optimizations done so far:
+## ~30k req/s, and a home upload limit
+
+Removing Envoy wasn't the only change, though.
+
+First, the API was also at its CPU limit last time, so I gave it some of the CPU Envoy freed, going from 3 to 5 vCPU. While at it, I raised the Redis connection pool from 50 to 150, and the API's in-flight limit from 1,200 to 2,000: at these rates, bursts were filling both.
+
+Second, a new bottleneck showed up somewhere between 16k and 18k rps: my home internet's upload speed, which is only around 50 Mbps.
+
+So I spun up a server in Hetzner Cloud, connected it to my mesh network, ran the load test from there, and sent it to the shadow realm once it had served its purpose.
+
+With all that:
 
 ![best-api](/url-shortener/c2-api.png)
 
-Around 32k rps reached the API, with ~2k rps of those failing due to the in-flight limits of the API: about 30k clean rps. Taking now an inspection of the cluster nodes:
+Around 32k rps reached the API, and ~2k of those failed on the in-flight limit: about 30k clean rps, with p99 latency at about 150ms. On the host:
 
 ![best-host](/url-shortener/c2-host.png)
 
-The same story happens: CPU steal rises and stalls the API and Redis, so Redis connections pile up and Go scheduler waits grow, requests queue in the API, and finally 503s start getting thrown.
+The same story repeats: CPU steal rises and stalls the API and Redis, Redis connections pile up and Go scheduler waits grow, requests queue in the API, and 503s start getting thrown.
 
-Difference is that the API itself is not reaching its CPU limits anymore, and sitting at around 3 vCPUs instead.
+The difference is that the API no longer reaches its CPU limit, sitting at around 3 vCPU instead.
 
-Regardless, we've hit the limit of the box again, but this time at ~30k clean rps instead!
+We've hit the limit of the box again, but this time at ~30k clean rps.
 
-## Lessons
+## What one box taught me about scaling
 
-You know, people say that the best part is the journey, not the destination. This definitely felt like one such case for me.
+I could have run these tests on my laptop and called it done, but then I'd have missed most of what I learnt:
 
-I could've just run these tests on my laptop and been done with it, but then this fun ride and all its learning would've never happened.
+1. **Measuring first** matters. Without it, I wouldn't have ditched Envoy: it's a standard deployment pattern, and I'd never have questioned it without seeing its cost first-hand.
+2. **Bottlenecks can be deceiving** if you don't know where to look. Without measuring CPU steal and Go scheduler wait, I'd still think the problem in [Part 2](/blog/system-design-beyond-the-design/part-2-how-far-can-one-box-go) was Redis.
 
-Without it, I wouldn't have learnt first-hand:
+The cloud has preached to a very wide audience that **horizontal scaling is all you need**, and for a long time I sang in that choir.
 
-1. Just how important **measuring first** is. If I didn't do that, I wouldn't have ditched Envoy... It's a standard deployment pattern and I wouldn't have questioned it if I didn't see its consequences for my use case first-hand.
-2. **Bottlenecks can be deceiving** if you don't know where to look. If I didn't take the time to measure CPU steal and Go scheduler wait, I would've always thought the problem was Redis back in [Part 2](/blog/system-design-beyond-the-design/part-2-how-far-can-one-box-go).
+Even in a system this simple, though, bottlenecks showed up in unexpected places, like Envoy and my home internet's upload speed. Scaling out would have hidden Envoy's cost instead of fixing it: I'd just have paid for more machines.
 
-More than that, it seems that the cloud has somehow preached to a very wide audience that **horizontal scaling is all you need**. I have for long felt like a part of that choir, alongside many others I personally know.
-
-However, even in a system as simple as the one I showcased here, bottlenecks appeared in unexpected places such as Envoy and my own home internet's upload speed. Scaling out would have hidden Envoy's cost instead of fixing it: I'd just have paid for more machines.
-
-Extrapolating to more complex systems with many more moving pieces, I can now only see this as a myopic point of view. Don't get me wrong, there is a place for it, but I now see more clearly that it can't be treated as a scaling silver bullet.
-
-Perhaps, more generally, it paints a picture of how much one can miss fruitful ideas by just following the paved road.
-
-Which is why, as intelligence keeps following the path of automation, I'll still try to keep sharpening my own mind. Even if automation gives rise to thousands of novel ideas, I hope to come across one of my own.
+The code, k6 scripts and Kubernetes manifests are [on GitHub](https://github.com/GilbertoCunha/system-design/tree/main/url-shortener). If you run a homelab, load test something on it. Odds are the first bottleneck won't be your code either.

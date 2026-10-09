@@ -43,7 +43,7 @@ export default defineConfig({
 					items: [
 						// One nested group per series, so its parts read as one unit
 						{
-							label: 'System Design: beyond the design',
+							label: 'A URL shortener at 30k req/s on a 6-core homelab',
 							items: [{ autogenerate: { directory: 'blog/system-design-beyond-the-design' } }],
 						},
 					],

@@ -9,6 +9,8 @@ export default defineConfig({
 	integrations: [
 		starlight({
 			title: 'grncunha.com',
+			// Renamed whenever the icon changes: browsers cache favicons by URL and hold on to them
+			favicon: '/favicon-gc.svg',
 			social: [
 				{
 					icon: 'github',
@@ -20,7 +22,7 @@ export default defineConfig({
 			components: { PageTitle: './src/components/PageTitle.astro' },
 			head: [
 				// iOS asks for this when a page is saved to the home screen, and 404s without it
-				{ tag: 'link', attrs: { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' } },
+				{ tag: 'link', attrs: { rel: 'apple-touch-icon', href: '/apple-touch-icon-gc.png' } },
 				// Links to other sites open in a new tab. One script covers every kind of link
 				// (Markdown, cards, buttons, the header's social icons), which have no shared
 				// place to set this otherwise.

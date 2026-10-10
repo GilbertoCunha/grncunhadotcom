@@ -1,13 +1,13 @@
 ---
 title: 'Part 1: It works on my machine'
-description: 'A URL shortener does 10k req/s on a laptop, then tops out at 3.5k and collapses to 180 req/s on a homelab. Instrumenting it to find out why.'
+description: 'A URL shortener does 10k req/s on a laptop, then tops out at 2.8k and collapses to 180 req/s on a homelab. Instrumenting it to find out why.'
 sidebar:
   order: 1
 ---
 
 *Part 1 of 3 of A URL shortener at 30k req/s on a 6-core homelab. New here? Start with the [series intro](/blog/system-design-beyond-the-design/).*
 
-On my laptop, the URL shortener handled 10k req/s with a 1.23ms p99. On my homelab, the same code topped out at 3.5k req/s and then collapsed to 180. This part covers why, and the dashboard I built to find out.
+On my laptop, the URL shortener handled 10k req/s with a 1.23ms p99. On my homelab, the same code topped out at 2.8k req/s and then collapsed to 180. This part covers why, and the dashboard I built to find out.
 
 ## The design: MD5 hashes, Redis in front of Postgres
 
@@ -23,7 +23,7 @@ Here are the decisions that matter for this series:
 
 Overall the design is quite vanilla, and looks like this:
 
-![design](/url-shortener/design.png)
+![A client calls the Go API, which reads from Redis and falls back to Postgres for reads and writes](/url-shortener/design.png)
 
 ## It works on my machine
 
@@ -73,7 +73,7 @@ Carving out IP ranges for nodes, pods and services, and getting the nodes onto t
 
 So what is the network path between a client and the pods? It depends on whether the client is on the mesh or the public internet:
 
-![cluster-networking](/url-shortener/cluster-networking.png)
+![Two paths into the cluster: public traffic goes through a Cloudflare Tunnel, cloudflared and the public Envoy Gateway to the pods, while mesh traffic goes through the mesh Envoy Gateway](/url-shortener/cluster-networking.png)
 
 *Yes, I left the host's IP forwarding out of the picture on purpose*. Some more context:
 
@@ -112,9 +112,9 @@ I decided, in my infinite wisdom, to set:
 
 Deploy and...
 
-*What??? Maximum 3.5k clean requests per second? During the `steady` phase of the load test only 180 requests per second succeeded? What do you mean?*
+*What??? Maximum 2.8k clean requests per second? During the `steady` phase of the load test only 180 requests per second succeeded? What do you mean?*
 
-![d1-journey](/url-shortener/d1-journey.png)
+![Requests by status on the first deploy: successful requests peak at about 2.8k req/s, then 5xx errors take over](/url-shortener/d1-requests.png)
 
 :::note
 This screenshot was taken from a run I replicated after the fact. At this point in time I had no instrumentation and didn't have a nice dashboard to tell me what went wrong. All I knew were the summary numbers k6 spits out at the end of a load test run.
@@ -142,7 +142,7 @@ From those metrics I built a Grafana dashboard with:
 
 Here's the dashboard's landing page:
 
-![dashboard-landing-page](/url-shortener/d0-journey.png)
+![The dashboard's Journey tab: stat tiles, requests by status, latency against the target, and time per request broken down by hop](/url-shortener/d0-journey.png)
 
 It also annotates load test runs (the purple area in the background), new deployments, OOM kills, etc. It evolved quite a lot with the help of *Cláudio* (the Portuguese name I jokingly use for Claude) after I got bored of doing everything by hand.
 
@@ -160,15 +160,15 @@ From here on out, every result and conclusion in this series comes from this das
 
 ## Why a 500m CPU limit collapses the API
 
-Alright, let's figure out why my homelab tops out at 3.5k rps. Run the load test again, check the dashboard, and...
+Alright, let's figure out why my homelab tops out at 2.8k rps. Run the load test again, check the dashboard, and...
 
-![d1-throttling](/url-shortener/d1-api.png)
+![The API's CPU hovering at its 0.5-core limit, while it is throttled almost 100% of the time](/url-shortener/d1-api-cpu.png)
 
 Well, that explains it... The API gets CPU throttled, the Go scheduler waits more and more before it can keep working, requests queue, everything goes to hell...
 
 Why so bad? Go reads the container's CPU limit, but it never runs on fewer than 2 threads. A 500m limit allows 50ms of CPU in every 100ms period. 2 busy threads use that up in the first 25ms, and then get paused for the other 75ms.
 
-And why did it collapse to 180 req/s instead of staying at 3.5k? Once requests queue for longer than their timeouts, the API spends its little CPU on work that clients have already given up on. Almost nothing finishes in time.
+And why did it collapse to 180 req/s instead of staying at 2.8k? Once requests queue for longer than their timeouts, the API spends its little CPU on work that clients have already given up on. Almost nothing finishes in time.
 
 Not an amazing insight (*raising the CPU limit is the first thing I'd have tried anyway*), but hey! At least we're making data-driven decisions, right?
 
@@ -212,7 +212,7 @@ I also raised Postgres's CPU limit to 2 and Redis's to 1 just for good measure, 
 
 Run again, and:
 
-![d0-journey](/url-shortener/d0-journey.png)
+![10k req/s with no errors, and p99 latency under 10ms](/url-shortener/d0-requests-latency.png)
 
 Nice! 10k rps, no errors, 8ms p99 (70ms as seen from k6, because of the latency from my laptop to the Hetzner server). We finally did it!
 

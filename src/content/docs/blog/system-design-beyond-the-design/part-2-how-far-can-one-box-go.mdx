@@ -1,13 +1,13 @@
 ---
 title: 'Part 2: How far can one box go?'
-description: 'At 20k req/s, the API says Redis is slow and Redis says it is not. The real culprit is CPU steal and the Go scheduler.'
+description: "At 20k req/s, the API says Redis is slow and Redis says it isn't. The real culprit is CPU steal and the Go scheduler."
 sidebar:
   order: 2
 ---
 
 *Part 2 of 3 of A URL shortener at 30k req/s on a 6-core homelab. New here? Start with the [series intro](/blog/system-design-beyond-the-design/).*
 
-[Part 1](/blog/system-design-beyond-the-design/part-1-it-works-on-my-machine) ended at 10k req/s. Pushing for 20k, the API reported Redis calls taking around 60ms, while Redis itself said they took 6ms.
+[Part 1](/blog/system-design-beyond-the-design/part-1-it-works-on-my-machine) ended at 10k req/s. Pushing for 20k, the API said about 60ms of every request went to Redis, while Redis itself said its commands took 6ms.
 
 This part is about which one was lying, and why.
 
@@ -17,22 +17,22 @@ I tried several optimizations after Part 1, but only two made a real difference.
 
 First, a load test with a more ambitious target: k6 at 20k rps, and go!
 
-![d7-journey](/url-shortener/d7-journey.png)
+![At 20k req/s, 5xx errors take over past about 13k clean req/s, while Redis's share of each request grows to around 60ms](/url-shortener/d7-requests-hops.png)
 
 Hmmm, it reaches around 18k rps, alright, but the API starts throwing 503s (about 5k per second, peaking at 10k), so only around 13k rps are clean, with p99 latency at about 450ms.
 
-The "Average time per request, by hop" panel shows where that time goes. Two parts of the request path take longer and longer as rps grows:
+The bottom panel, "Average time per request, by hop", shows where that time goes. Two parts of the request path take longer and longer as rps grows:
 
 1. Redis
 2. Gateway (Envoy)
 
-Redis seems to be the major contributor.
+Redis seems to be the major contributor, at around 60ms of every request.
 
-All of the errors are 503s, so let's look at the API tab of the dashboard to see why:
+All of the errors are 503s, and the API's dashboard tab says why:
 
-![d7-api](/url-shortener/d7-api.png)
+![Every 503 comes from the in-flight limit, peaking near 10k per second](/url-shortener/d7-503s.png)
 
-In "503s by cause", at the bottom right, all of them are `in_flight_limit`. The API has a counting semaphore that limits how many requests it keeps in flight. Past that number, it answers 503 to say it's overloaded.
+All of them are `in_flight_limit`. The API has a counting semaphore that limits how many requests it keeps in flight. Past that number, it answers 503 to say it's overloaded.
 
 That in-flight limit definitely needed some tuning, since latency still spiked badly, but let's forget that for now.
 
@@ -50,21 +50,17 @@ That was to no avail, because, as we are about to see, *I was looking in the wro
 
 With the full dashboard, here's Redis:
 
-![d7-redis](/url-shortener/d7-redis.png)
+![Waiting for a Redis connection climbs past 400ms and Redis commands timed from the API reach about 30ms, while Redis itself never takes more than 6ms](/url-shortener/d7-redis-latency.png)
 
-:::note
-The bottom of this screenshot is a little cut off, apologies. You only need the top of the bottom panels anyway.
-:::
+The rest of the Redis tab looks healthy (CPU and memory aren't under pressure, and the cache hit ratio is at 100%) apart from some timeout errors, and wait...
 
-CPU and memory aren't under pressure, cache hit ratio is at 100%, there are some timeout errors, and wait...
-
-Up to 400ms waiting for a connection? And Redis commands run in 6ms at most? But the API reported they took 10x that... That's fishy...
+Up to 400ms waiting for a connection? And Redis commands run in 6ms at most? But the API timed those same commands at over 30ms, and put about 60ms of every request in Redis, 10x what Redis says... That's fishy...
 
 ## Envoy is using 4 vCPU
 
 Latency was also climbing in the Gateway, so let's look at it:
 
-![d7-gateway](/url-shortener/d7-gateway.png)
+![Envoy's CPU climbing past 4 cores, double its 2-core request](/url-shortener/d7-envoy-cpu.png)
 
 Damn... an L7 proxy using upwards of 4 vCPU?
 
@@ -76,23 +72,23 @@ I have to admit, when I first deployed it, I thought it would just be chilling t
 
 So between the Gateway, API, Redis, Postgres, all the other shenanigans in my cluster and the host itself, how much CPU is in use, really?
 
-![d7-host](/url-shortener/d7-host.png)
+![Host CPU in use climbing to about 8 of the worker's 10 vCPU, with CPU steal peaking around 15% on every node](/url-shortener/d7-host-steal.png)
 
 *Since I am a greedy bastard*, I gave 10 vCPU to my worker VM, and 2 vCPU each to the other two VMs. Each vCPU is one thread on the host, so that's up to 14 threads for the VMs. The host only has 12, and it needs some for itself too.
 
 The result is [CPU steal](https://www.site24x7.com/learn/linux/cpu-steal-time.html), peaking at around 15%. Proxmox has promised the VMs more CPU than it has, so instead of getting the CPU they were promised, VMs wait for each other to get CPU time.
 
-Which means the worker VM, the Kubernetes node running our application and Gateway, is already CPU saturated.
+Which means the worker VM, the Kubernetes node running our application and Gateway, isn't getting all the CPU it was promised, even though it's not using all 10 vCPU.
 
 ## The real culprit: Go scheduler wait
 
 To put the nail in the coffin, let's look at the API's Go metrics:
 
-![d7-go](/url-shortener/d7-go.png)
+![The API's CPU reaching about 2.4 of its 3-core limit, and Go scheduler wait peaking near 45ms](/url-shortener/d7-go-cpu-wait.png)
 
-CPU usage is reaching its limit, not a great start.
+CPU usage is getting close to its limit, at about 2.4 of 3 cores, not a great start.
 
-Even worse is "Scheduler wait", at the bottom left: how long a goroutine waits for a thread before it can resume work. With this many requests coming in, the API is running a lot of goroutines.
+Even worse is "Scheduler wait", below it: how long a goroutine waits for a thread before it can resume work. With this many requests coming in, the API is running a lot of goroutines.
 
 Scheduler wait rises to almost 45ms! Before, it was in the order of microseconds. That's a LOT of time spent waiting instead of handling requests.
 
@@ -116,7 +112,7 @@ Summarizing what happened:
 3. The host runs out of CPU
 4. With the host overcommitted on CPU, Proxmox starts to 'steal' CPU from VMs
 5. Gateway latency spikes: Envoy is at its 4-thread cap, and its CPU is being stolen too
-6. The API is near its own 3-CPU limit and starved of CPU, so goroutine wait times skyrocket
+6. The API is close to its own 3-CPU limit, and its node's CPU is being stolen, so goroutine wait times skyrocket
 7. Redis connection acquisition times skyrocket
 8. Overall latency goes through the roof
 9. Requests queue up in the API
@@ -127,7 +123,7 @@ Summarizing what happened:
 So hurray! We:
 
 1. Hit 13k clean rps
-2. Found the bottleneck: CPU, both the API's own limit and the host itself
+2. Found the bottleneck: the host's CPU, with the API getting close to its own limit too
 
 But what can I actually do about *that*? Can we... go further?
 

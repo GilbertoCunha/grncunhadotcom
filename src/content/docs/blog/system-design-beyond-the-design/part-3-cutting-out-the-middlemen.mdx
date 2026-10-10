@@ -31,13 +31,13 @@ Here's how routing works with Gateway API in the cluster:
 2. The mesh Gateway accepts any subdomain, and each app adds a route for its own name, such as `url-shortener.dev.k8s.homelab.grncunha.com`
 3. External DNS creates a DNS record mapping that subdomain to the IP of the Cilium load balancer in front of the Gateway (*yes, there's already an L4 load balancer in the path!*)
 
-![mesh-with-gateway](/url-shortener/mesh-with-gateway.png)
+![On the mesh, through the Gateway: the client reaches a Cilium L4 load balancer over WireGuard, then the Envoy mesh Gateway, then the pods](/url-shortener/mesh-with-gateway.png)
 
 So... why not **cut out the middleman**?
 
 Instead, the DNS record can point to an L4 load balancer created just for this application, which sends traffic straight to its pods, and WireGuard still encrypts it on the way to the server:
 
-![mesh-without-gateway](/url-shortener/mesh-without-gateway.png)
+![On the mesh, without the Gateway: the client reaches a Cilium L4 load balancer over WireGuard, which sends plain HTTP straight to the pods](/url-shortener/mesh-without-gateway.png)
 
 That takes Envoy out of the request path.
 
@@ -60,7 +60,7 @@ The alternatives all keep the cost:
 
 Removing Envoy wasn't the only change, though.
 
-First, the API was also at its CPU limit last time, so I gave it some of the CPU Envoy freed, going from 3 to 5 vCPU. While at it, I raised the Redis connection pool from 50 to 150, and the API's in-flight limit from 1,200 to 2,000: at these rates, bursts were filling both.
+First, the API was also getting close to its CPU limit last time, so I gave it some of the CPU Envoy freed, going from 3 to 5 vCPU. While at it, I raised the Redis connection pool from 50 to 150, and the API's in-flight limit from 1,200 to 2,000: at these rates, bursts were filling both.
 
 Second, a new bottleneck showed up somewhere between 16k and 18k rps: my home internet's upload speed, which is only around 50 Mbps.
 
@@ -68,15 +68,15 @@ So I spun up a server in Hetzner Cloud, connected it to my mesh network, ran the
 
 With all that:
 
-![best-api](/url-shortener/c2-api.png)
+![About 32k req/s reaching the API, with p99 latency around 150ms](/url-shortener/c2-requests-p99.png)
 
 Around 32k rps reached the API, and ~2k of those failed on the in-flight limit: about 30k clean rps, with p99 latency at about 150ms. On the host:
 
-![best-host](/url-shortener/c2-host.png)
+![Host CPU at about 6 of the worker's 10 vCPU, with CPU steal peaking around 13%](/url-shortener/c2-host-steal.png)
 
 The same story repeats: CPU steal rises and stalls the API and Redis, Redis connections pile up and Go scheduler waits grow, requests queue in the API, and 503s start getting thrown.
 
-The difference is that the API no longer reaches its CPU limit, sitting at around 3 vCPU instead.
+The difference is that the API is nowhere near its CPU limit now, sitting at around 3 of its 5 vCPU.
 
 We've hit the limit of the box again, but this time at ~30k clean rps.
 

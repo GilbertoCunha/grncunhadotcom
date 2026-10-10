@@ -19,7 +19,11 @@ export default defineConfig({
 				},
 			],
 			customCss: ['./src/styles/custom.css'],
-			components: { PageTitle: './src/components/PageTitle.astro' },
+			routeMiddleware: './src/routeData.ts',
+			components: {
+				PageTitle: './src/components/PageTitle.astro',
+				Footer: './src/components/Footer.astro',
+			},
 			head: [
 				// iOS asks for this when a page is saved to the home screen, and 404s without it
 				{ tag: 'link', attrs: { rel: 'apple-touch-icon', href: '/apple-touch-icon-gc.png' } },

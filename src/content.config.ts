@@ -10,6 +10,8 @@ export const collections = {
 			extend: z.object({
 				// A button shown beside the page title (see src/components/PageTitle.astro)
 				titleLink: z.object({ text: z.string(), href: z.string() }).optional(),
+				// giscus comments under the page; on by default for blog posts only (see src/components/Footer.astro)
+				comments: z.boolean().optional(),
 			}),
 		}),
 	}),

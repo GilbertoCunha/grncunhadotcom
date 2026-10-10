@@ -1,0 +1,59 @@
+---
+// Starlight's footer, with giscus comments above it on blog posts. Each page's
+// comments are a GitHub Discussion in this repo, found by the page's pathname,
+// so `npm run dev` shows (and posts to) the same threads as the live site.
+// A page opts out with `comments: false` in its frontmatter (see
+// src/content.config.ts).
+import Default from '@astrojs/starlight/components/Footer.astro';
+import { hasComments } from '../comments';
+
+const showComments = hasComments(Astro.locals.starlightRoute.entry);
+---
+
+{
+	showComments && (
+		<section id="comments" class="comments" aria-label="Comments">
+			<script is:inline>
+				// Added from here rather than as a plain tag, so it starts in the
+				// theme the page has (Starlight's toggle, not only the system's)
+				(() => {
+					const theme = () => (document.documentElement.dataset.theme === 'light' ? 'light' : 'dark');
+					const giscus = document.createElement('script');
+					giscus.src = 'https://giscus.app/client.js';
+					giscus.crossOrigin = 'anonymous';
+					giscus.async = true;
+					Object.assign(giscus.dataset, {
+						repo: 'GilbertoCunha/grncunhadotcom',
+						repoId: 'R_kgDOUAxyTw',
+						category: 'Comments',
+						categoryId: 'DIC_kwDOUAxyT84DHfoV',
+						mapping: 'pathname',
+						strict: '1',
+						reactionsEnabled: '1',
+						emitMetadata: '0',
+						inputPosition: 'top',
+						theme: theme(),
+						lang: 'en',
+						loading: 'lazy',
+					});
+					document.currentScript.after(giscus);
+
+					// Pass on every later change of the toggle
+					new MutationObserver(() => {
+						document
+							.querySelector('iframe.giscus-frame')
+							?.contentWindow?.postMessage({ giscus: { setConfig: { theme: theme() } } }, 'https://giscus.app');
+					}).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+				})();
+			</script>
+		</section>
+	)
+}
+
+<Default />
+
+<style>
+	.comments {
+		margin-top: 3rem;
+	}
+</style>
